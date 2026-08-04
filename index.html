@@ -1119,10 +1119,9 @@ init();
 <script>
 if('serviceWorker' in navigator){
   const swCode=`
-const CACHE='estapar-v1';
-const ASSETS=['/'];
+const CACHE='estapar-v2';
+const ASSETS=[];
 self.addEventListener('install',e=>{
-  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));
   self.skipWaiting();
 });
 self.addEventListener('activate',e=>{
@@ -1130,14 +1129,39 @@ self.addEventListener('activate',e=>{
   self.clients.claim();
 });
 self.addEventListener('fetch',e=>{
-  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
+  // Sempre busca a versão mais nova na rede (ignora cache HTTP); só usa
+  // cache local como reserva se estiver offline.
+  e.respondWith(
+    fetch(e.request, {cache:'no-store'})
+      .then(resp=>{
+        const copy=resp.clone();
+        caches.open(CACHE).then(c=>c.put(e.request, copy));
+        return resp;
+      })
+      .catch(()=>caches.match(e.request))
+  );
 });
   `;
   const blob=new Blob([swCode],{type:'application/javascript'});
   const url=URL.createObjectURL(blob);
   navigator.serviceWorker.register(url,{scope:'./'})
-    .then(()=>console.log('SW registered'))
+    .then(reg=>{
+      console.log('SW registered');
+      // Verifica se há uma versão nova assim que o app abre
+      reg.update();
+      // Verifica periodicamente (a cada 60s) se surgiu uma versão nova
+      setInterval(()=>reg.update(), 60000);
+    })
     .catch(e=>console.log('SW error',e));
+
+  // Quando um novo Service Worker assume o controle, recarrega a página
+  // automaticamente para garantir que o usuário sempre veja a versão mais recente.
+  let refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(refreshing) return;
+    refreshing=true;
+    window.location.reload();
+  });
 }
 </script>
 

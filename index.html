@@ -703,6 +703,7 @@ function processCSV(rows) {
 
   const monMap = {};  // key = ger|gar|ano|mes
   const dowMap = {};  // key = gar|ano|mes|dow
+  const dayMap = {};  // key = gar|ano|mes -> {r:[31], v:[31]}
 
   for(let r = hdrIdx+1; r < rows.length; r++) {
     const row = rows[r];
@@ -753,6 +754,15 @@ function processCSV(rows) {
         dowMap[dk].daysSet.add(dayNum);
       }
     }
+
+    // DAY_IDX (receita/volume por dia do mês, para heatmap e breakeven)
+    const dayNumRaw = iData >= 0 ? parseInt(row[iData]) : NaN;
+    if(!isNaN(dayNumRaw) && dayNumRaw >= 1 && dayNumRaw <= 31) {
+      const dk2 = gar + '|' + ano + '|' + mes;
+      if(!dayMap[dk2]) dayMap[dk2] = {r:new Array(31).fill(0), v:new Array(31).fill(0)};
+      dayMap[dk2].r[dayNumRaw-1] += rotVal;
+      dayMap[dk2].v[dayNumRaw-1] += volVal;
+    }
   }
 
   const monData = Object.values(monMap).map(r => ({
@@ -777,7 +787,19 @@ function processCSV(rows) {
     ];
   });
 
-  return { monData, dowIdx };
+  // Build DAY_IDX (heatmap/breakeven) — formato [ [r1..r31],[v1..v31] ]
+  const dayIdx = {};
+  Object.entries(dayMap).forEach(([key, d]) => {
+    const [g, ano, mes] = key.split('|');
+    if(!dayIdx[g]) dayIdx[g] = {};
+    if(!dayIdx[g][ano]) dayIdx[g][ano] = {};
+    dayIdx[g][ano][mes] = [
+      d.r.map(v => Math.round(v*10)/10),
+      d.v.map(v => Math.round(v))
+    ];
+  });
+
+  return { monData, dowIdx, dayIdx };
 }
 
 async function syncSheets() {
@@ -790,24 +812,82 @@ async function syncSheets() {
     const rows = parseCSV(text);
     const result = processCSV(rows);
     if(!result || !result.monData.length) throw new Error('Dados inválidos');
-    
+
+    // DEBUG: mostrar quais ano/mês vieram da planilha
+    const dbg = document.getElementById('dbg');
+    if(dbg) {
+      const combos = {};
+      result.monData.forEach(r => {
+        const k = r.ano+'/'+r.mes;
+        combos[k] = (combos[k]||0) + 1;
+      });
+      let info = '<b>Linhas cruas no CSV: '+ (rows.length-1) +'</b><br>';
+      info += '<b>Registros mensais processados: '+ result.monData.length +'</b><br><br>';
+      info += '<b>Combinações Ano/Mês encontradas na planilha:</b><br>';
+      Object.keys(combos).sort().forEach(k => {
+        info += k + ': ' + combos[k] + ' registro(s)<br>';
+      });
+      const has2026Julho = result.monData.some(r => String(r.ano)==='2026' && r.mes==='julho');
+      info += '<br><b>2026/julho encontrado no CSV?</b> ' + (has2026Julho ? '<span style="color:#7dcb5b">SIM</span>' : '<span style="color:#f87171">NÃO</span>') + '<br>';
+      if(has2026Julho) {
+        const jul = result.monData.filter(r => String(r.ano)==='2026' && r.mes==='julho');
+        const totRot = jul.reduce((s,r)=>s+r.r,0);
+        info += 'Total Rotativo julho/2026 (planilha): R$ ' + totRot.toFixed(2) + '<br>';
+      }
+      dbg.innerHTML = info;
+      dbg.style.display = 'block';
+    }
+
     // Save to localStorage
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(result));
       localStorage.setItem(CACHE_TS, new Date().toISOString());
     } catch(e) { console.warn('Cache error:', e); }
 
-    // Substituir dados globais com valores do Google Sheets (col AI e AK)
-    MON_DATA.splice(0, MON_DATA.length, ...result.monData);
-    Object.keys(DOW_IDX).forEach(k => delete DOW_IDX[k]);
-    Object.assign(DOW_IDX, result.dowIdx);
+    // MESCLAR dados da planilha com a base histórica (não substitui, atualiza/adiciona)
+    mergeData(result);
 
     const ts = new Date().toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-    setSyncStatus('ok', '✓ ' + ts + ' · Rot=N+P+V+X · Vol=M+Q+W · ' + result.monData.length + ' reg');
+    setSyncStatus('ok', '✓ ' + ts + ' · Rot=N+P+V+X · Vol=M+Q+W · ' + result.monData.length + ' reg (mesclado)');
     render();
   } catch(err) {
     console.error('Sync error:', err);
     setSyncStatus('err', 'Erro ao sincronizar: ' + err.message);
+  }
+}
+
+/* Mescla os dados vindos da planilha com a base já carregada (MON_DATA, DOW_IDX, DAY_IDX),
+   atualizando apenas as garagens/anos/meses presentes na planilha e preservando o restante. */
+function mergeData(result) {
+  // --- MON_DATA: upsert por chave gerente|garagem|ano|mes ---
+  const monKey = r => r.gerente+'|'+r.g+'|'+r.ano+'|'+r.mes;
+  const monByKey = {};
+  MON_DATA.forEach(r => { monByKey[monKey(r)] = r; });
+  result.monData.forEach(r => { monByKey[monKey(r)] = r; });
+  MON_DATA.splice(0, MON_DATA.length, ...Object.values(monByKey));
+
+  // --- DOW_IDX: merge profundo até o nível mês ---
+  Object.entries(result.dowIdx).forEach(([g, byAno]) => {
+    if(!DOW_IDX[g]) DOW_IDX[g] = {};
+    Object.entries(byAno).forEach(([ano, byMes]) => {
+      if(!DOW_IDX[g][ano]) DOW_IDX[g][ano] = {};
+      Object.entries(byMes).forEach(([mes, byDow]) => {
+        DOW_IDX[g][ano][mes] = byDow; // substitui só o mês específico
+      });
+    });
+  });
+
+  // --- DAY_IDX: merge profundo até o nível mês ---
+  if(result.dayIdx) {
+    Object.entries(result.dayIdx).forEach(([g, byAno]) => {
+      if(!DAY_IDX[g]) DAY_IDX[g] = {};
+      Object.entries(byAno).forEach(([ano, byMes]) => {
+        if(!DAY_IDX[g][ano]) DAY_IDX[g][ano] = {};
+        Object.entries(byMes).forEach(([mes, arr]) => {
+          DAY_IDX[g][ano][mes] = arr; // substitui só o mês específico
+        });
+      });
+    });
   }
 }
 
@@ -818,9 +898,7 @@ async function initSync() {
     const ts     = localStorage.getItem(CACHE_TS);
     if(cached) {
       const result = JSON.parse(cached);
-      MON_DATA.splice(0, MON_DATA.length, ...result.monData);
-      Object.keys(DOW_IDX).forEach(k => delete DOW_IDX[k]);
-      Object.assign(DOW_IDX, result.dowIdx);
+      mergeData(result);
       const d = ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '?';
       setSyncStatus('ok', 'Cache: ' + d);
       render();

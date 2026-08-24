@@ -198,10 +198,10 @@ tr:active td{background:rgba(125,203,91,.04)}
 .heatmap-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .heatmap-dow{font-size:9px;text-align:center;color:var(--gray-muted);padding-bottom:3px;text-transform:uppercase}
 .heatmap-cell{aspect-ratio:1;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  font-size:10px;font-weight:700;color:#0a0a0a}
+  font-size:12px;font-weight:700;color:#0a0a0a}
 .heatmap-cell.empty-day{background:transparent}
-.heatmap-cell .hday{font-size:11px}
-.heatmap-cell .hval{font-size:6.5px;font-weight:600;opacity:.85}
+.heatmap-cell .hday{font-size:13px}
+.heatmap-cell .hval{font-size:8px;font-weight:600;opacity:.85}
 .heatmap-legend{display:flex;align-items:center;gap:5px;margin-top:10px;font-size:10px;color:var(--gray-muted)}
 .heatmap-legend .hl-box{width:12px;height:12px;border-radius:3px}
 
@@ -246,7 +246,7 @@ tr:active td{background:rgba(125,203,91,.04)}
       <div class="kpi"><span class="kpi-icon">🛡️</span><div class="kl">Porto Seguro</div><div class="kv" id="k-por">—</div><div class="ks" id="k-por-s"></div><div id="k-por-d"></div></div>
       <div class="kpi"><span class="kpi-icon">🚗</span><div class="kl">Volume</div><div class="kv" id="k-vol">—</div><div class="ks" id="k-vol-s"></div><div id="k-vol-d"></div></div>
       <div class="kpi full"><span class="kpi-icon">📊</span><div class="kl">Total Faturamento</div><div class="kv" id="k-tot">—</div><div class="ks" id="k-tot-s"></div><div id="k-tot-d"></div></div>
-      <div class="kpi full" id="kpi-budget-card" style="display:none"><span class="kpi-icon">🎯</span><div class="kl">Budget 2026</div><div class="kv" id="k-bud" style="color:#ff9f1c">—</div><div class="ks" id="k-bud-s"></div><div id="k-bud-d"></div></div>
+      <div class="kpi full" id="kpi-budget-card" style="display:none"><span class="kpi-icon">🎯</span><div class="kl">Real x Budget 2026</div><div class="kv" id="k-bud" style="color:#ff9f1c">—</div><div class="ks" id="k-bud-s"></div><div class="ks" id="k-bud-real" style="color:#7dcb5b;margin-top:2px"></div><div id="k-bud-d"></div></div>
     </div>
 
     <!-- RESUMO POR ANO -->
@@ -274,6 +274,8 @@ tr:active td{background:rgba(125,203,91,.04)}
     </div>
     <div class="slab">Rotativo por Mês</div>
     <div class="card"><div class="leg" id="leg-m-rot"></div><div class="cw" style="height:200px"><canvas id="c-m-rot" role="img" aria-label="Rotativo mensal">Gráfico.</canvas></div></div>
+    <div class="slab">Faturamento Mensal x Budget 2026</div>
+    <div class="card"><div class="leg" id="leg-m-acum"></div><div class="cw" style="height:220px"><canvas id="c-m-acum" role="img" aria-label="Faturamento mensal vs budget">Gráfico.</canvas></div></div>
     <div class="slab">Mensalistas por Mês</div>
     <div class="card"><div class="leg" id="leg-m-men"></div><div class="cw" style="height:180px"><canvas id="c-m-men" role="img" aria-label="Mensalistas mensal">Gráfico.</canvas></div></div>
     <div class="slab">Volume por Mês</div>
@@ -329,7 +331,7 @@ tr:active td{background:rgba(125,203,91,.04)}
     </div>
     <div class="be-input-row">
       <label>Custo Fixo Mensal (R$)</label>
-      <input type="number" id="be-custo" placeholder="Ex: 150000" min="0" step="100" oninput="onCustoChange()">
+      <input type="text" inputmode="decimal" id="be-custo" placeholder="R$ 0,00" oninput="onCustoChange()" onblur="formatCustoDisplay()" onfocus="this.select()">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <span id="be-custo-src" style="font-size:10px;color:#ff9f1c;font-weight:600"></span>
         <button type="button" onclick="resetCustoToBudget()" style="background:transparent;border:1px solid var(--gray-line);color:var(--gray-muted);border-radius:6px;padding:4px 8px;font-size:10px;cursor:pointer;white-space:nowrap">↺ Budget</button>
@@ -403,7 +405,7 @@ const GC='rgba(255,255,255,.07)',TC='#c8c8c8';
 const TTP={backgroundColor:'rgba(0,0,0,.9)',borderColor:'rgba(125,203,91,.3)',borderWidth:1,titleColor:'#7dcb5b',bodyColor:'#ccc',padding:10};
 
 function mkLO(cb){return{responsive:true,maintainAspectRatio:false,
-  plugins:{legend:{display:false},tooltip:{...TTP,callbacks:{label:c=>c.dataset.label+': '+(c.dataset._isVol?fN(c.raw):fK(c.raw))}}},
+  plugins:{legend:{display:false},tooltip:{...TTP,callbacks:{label:c=>c.dataset.label+': '+(c.dataset._isVol?fN(c.raw):fFull(c.raw))}}},
   scales:{x:{grid:{color:GC},ticks:{color:TC,font:{size:9}}},y:{grid:{color:GC},ticks:{color:TC,font:{size:9},callback:cb}}}};}
 function mkLeg(id,items){document.getElementById(id).innerHTML=items.map(([l,c])=>`<span style="display:flex;align-items:center;gap:3px"><span class="ld" style="background:${c}"></span><span style="color:${c}">${l}</span></span>`).join('');}
 
@@ -493,22 +495,25 @@ function updateKPIs(){
   document.getElementById('k-vol').textContent=fN(vol);document.getElementById('k-vol-s').textContent='movimentações';
   document.getElementById('k-tot').textContent=fK(tot);document.getElementById('k-tot-s').textContent=tot>0?fP((rot/tot)*100)+' rotativo':'—';
 
-  /* Budget 2026 x Real */
+  /* Real x Budget 2026 — sempre comparando o acumulado do MESMO período (mesmos meses) */
   const budCard=document.getElementById('kpi-budget-card');
   const gBud=BUDGET_DATA[curGar];
   if(gBud && (!kA || kA==='2026')){
-    let budTotal=0;
+    let budTotal=0, periodoLbl='';
     if(kM){
       budTotal=gBud[kM]||0;
+      periodoLbl=(MO_LABEL[kM]||kM);
     } else {
-      const mesesComDado=new Set(data.filter(r=>String(r.ano)==='2026').map(r=>r.mes));
+      const mesesComDado=[...new Set(data.filter(r=>String(r.ano)==='2026').map(r=>r.mes))];
       mesesComDado.forEach(m=>{budTotal+=gBud[m]||0;});
+      periodoLbl=mesesComDado.length ? `acum. ${mesesComDado.length} ${mesesComDado.length===1?'mês':'meses'}` : '';
     }
-    const rot2026=data.filter(r=>String(r.ano)==='2026').reduce((s,r)=>s+r.r,0);
+    const tot2026=data.filter(r=>String(r.ano)==='2026').reduce((s,r)=>s+r.r+r.n+r.p,0);
     budCard.style.display='';
     document.getElementById('k-bud').textContent=fK(budTotal);
+    document.getElementById('k-bud-real').textContent='Total Faturamento '+periodoLbl+': '+fK(tot2026);
     if(budTotal>0){
-      const pct=(rot2026/budTotal)*100;
+      const pct=(tot2026/budTotal)*100;
       const cls=pct>=100?'pos':'neg';
       const sign=pct>=100?'▲':'▼';
       document.getElementById('k-bud-s').innerHTML=`<span class="kpi-delta ${cls}">${sign} ${fP(Math.abs(pct-100))} ${pct>=100?'acima':'abaixo'} do budget</span>`;
@@ -556,23 +561,30 @@ function renderMensal(){
   const data=filtered().filter(r=>!fm||r.mes===fm);
   const pivot=buildPivot(data),yrs=[...activeYears].sort(),months=fm?[fm]:MO,mlabs=fm?[fm]:MS;
   const li=yrs.map(y=>[y,YC[y]]);
-  const hasBudget=BUDGET_DATA[curGar]&&activeYears.has('2026');
-  const legRot=hasBudget?[...li,['Budget 2026','#ff9f1c']]:li;
-  mkLeg('leg-m-rot',legRot);mkLeg('leg-m-men',li);mkLeg('leg-m-vol',li);mkLeg('leg-m-por',li);
-  const mkL=k=>({type:'line',data:{labels:mlabs,datasets:yrs.map(y=>({label:y,data:months.map(m=>Math.round(pivot[y][m][k]||0)),borderColor:YC[y],backgroundColor:YC_BG[y],borderWidth:2,tension:.3,fill:false,pointRadius:3,pointBackgroundColor:YC[y]}))},options:mkLO(v=>k==='v'?fN(v):fK(v))});
-  const rotChartCfg=mkL('r');
-  if(hasBudget){
-    rotChartCfg.data.datasets.push({
-      label:'Budget 2026',
-      data:months.map(m=>Math.round(BUDGET_DATA[curGar][m]||0)),
-      borderColor:'#ff9f1c',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],
-      tension:.3,fill:false,pointRadius:2.5,pointBackgroundColor:'#ff9f1c'
-    });
-  }
-  kill('m-rot');charts['m-rot']=new Chart(document.getElementById('c-m-rot').getContext('2d'),rotChartCfg);
+  mkLeg('leg-m-rot',li);mkLeg('leg-m-men',li);mkLeg('leg-m-vol',li);mkLeg('leg-m-por',li);
+  const mkLOFull=cb=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{...TTP,callbacks:{label:c=>c.dataset.label+': '+fFull(c.raw)}}},
+    scales:{x:{grid:{color:GC},ticks:{color:TC,font:{size:9}}},y:{grid:{color:GC},ticks:{color:TC,font:{size:9},callback:cb}}}});
+  const mkL=k=>({type:'line',data:{labels:mlabs,datasets:yrs.map(y=>({label:y,data:months.map(m=>Math.round(pivot[y][m][k]||0)),borderColor:YC[y],backgroundColor:YC_BG[y],borderWidth:2,tension:.3,fill:false,pointRadius:3,pointBackgroundColor:YC[y]}))},options:k==='v'?mkLO(v=>fN(v)):mkLOFull(v=>fFull(v))});
+  kill('m-rot');charts['m-rot']=new Chart(document.getElementById('c-m-rot').getContext('2d'),mkL('r'));
   kill('m-men');charts['m-men']=new Chart(document.getElementById('c-m-men').getContext('2d'),mkL('n'));
   kill('m-vol');charts['m-vol']=new Chart(document.getElementById('c-m-vol').getContext('2d'),mkL('v'));
   kill('m-por');charts['m-por']=new Chart(document.getElementById('c-m-por').getContext('2d'),mkL('p'));
+
+  /* NOVO: Faturamento Mensal (Rotativo + Mensalista) x Budget 2026 — valor de CADA MÊS, não acumulado */
+  const hasBudgetAcum=BUDGET_DATA[curGar]&&yrs.includes('2026');
+  const legAcum=yrs.map(y=>[y,YC[y]]);
+  if(hasBudgetAcum) legAcum.push(['Budget 2026','#ff9f1c']);
+  mkLeg('leg-m-acum',legAcum);
+  const acumDS=yrs.map(y=>{
+    const arr=MO.map(m=>Math.round((pivot[y][m].r||0)+(pivot[y][m].n||0)));
+    return {label:y,data:arr,borderColor:YC[y],backgroundColor:YC_BG[y],borderWidth:2,tension:.25,fill:false,pointRadius:2.5,pointBackgroundColor:YC[y]};
+  });
+  if(hasBudgetAcum){
+    const budArr=MO.map(m=>Math.round(BUDGET_DATA[curGar][m]||0));
+    acumDS.push({label:'Budget 2026',data:budArr,borderColor:'#ff9f1c',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],tension:.25,fill:false,pointRadius:2,pointBackgroundColor:'#ff9f1c'});
+  }
+  kill('m-acum');charts['m-acum']=new Chart(document.getElementById('c-m-acum').getContext('2d'),{type:'line',data:{labels:MS,datasets:acumDS},options:mkLOFull(v=>fFull(v))});
+
   /* Table */
   const has26=yrs.includes('2026');
   ['th-m1','th-m2','th-m3'].forEach((id,i)=>{const el=document.getElementById(id);if(el){el.textContent=yrs[i]||'';el.style.color=YC[yrs[i]]||'';}});
@@ -588,7 +600,7 @@ function renderMensal(){
         else if(v<min26)tag='<span style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:#333;color:#bbb;font-size:8px;font-weight:700;margin-left:3px;border:1px solid #555">▼</span>';
       }
       const isBest=v===maxV&&v>0,style=`color:${YC[y]};font-weight:${isBest?'700':'400'}`;
-      return`<td style="${style}">${v>0?fK(v):'—'}${tag}</td>`;
+      return`<td style="${style}">${v>0?fFull(v):'—'}${tag}</td>`;
     }).join('');
     const emp=yrs.length<3?'<td></td>'.repeat(3-yrs.length):'';
     return`<tr><td class="left" style="font-weight:600;color:#c8c8c8">${MS[mi]}</td>${cells}${emp}<td style="color:${YC[bestY]||'#555'};font-weight:700">${bestY}</td></tr>`;
@@ -607,13 +619,21 @@ function renderDiario(){
     if(gd&&gd[y]&&gd[y][mes])Object.entries(gd[y][mes]).forEach(([d,vals])=>{if(pivot[y][d])pivot[y][d]={r:vals[0]||0,n:vals[1]||0,p:vals[2]||0,v:vals[3]||0,cnt:vals[4]||0};});
   });
   const dowLabels=DOW_ORDER.map(d=>{const k=d.split('-')[0];return DOW_SHORT[k]||d.substring(0,3);});
-  const mkLineDS=k=>yrs.map(y=>({label:y,data:DOW_ORDER.map(d=>Math.round(pivot[y][d][k]||0)),borderColor:YC[y],backgroundColor:YC_BG[y],borderWidth:2,tension:.3,fill:false,pointRadius:4,pointBackgroundColor:YC[y],_isVol:k==='v'}));
+  const mkLineDS=k=>yrs.map(y=>{
+    const data=DOW_ORDER.map(d=>{
+      const p=pivot[y][d];
+      const avg = p.cnt>0 ? p[k]/p.cnt : 0;
+      return Math.round(avg);
+    });
+    return {label:y,data,borderColor:YC[y],backgroundColor:YC_BG[y],borderWidth:2,tension:.3,fill:false,pointRadius:4,pointBackgroundColor:YC[y],_isVol:k==='v'};
+  });
   const dLO=cb=>mkLO(cb);
   const li=yrs.map(y=>[y,YC[y]]);
+
   mkLeg('leg-d-rot',li);mkLeg('leg-d-vol',li);mkLeg('leg-d-por',li);
-  kill('d-rot');charts['d-rot']=new Chart(document.getElementById('c-d-rot').getContext('2d'),{type:'line',data:{labels:dowLabels,datasets:mkLineDS('r')},options:dLO(v=>fK(v))});
+  kill('d-rot');charts['d-rot']=new Chart(document.getElementById('c-d-rot').getContext('2d'),{type:'line',data:{labels:dowLabels,datasets:mkLineDS('r')},options:dLO(v=>fFull(v))});
   kill('d-vol');charts['d-vol']=new Chart(document.getElementById('c-d-vol').getContext('2d'),{type:'line',data:{labels:dowLabels,datasets:mkLineDS('v')},options:dLO(v=>fN(v))});
-  kill('d-por');charts['d-por']=new Chart(document.getElementById('c-d-por').getContext('2d'),{type:'line',data:{labels:dowLabels,datasets:mkLineDS('p')},options:dLO(v=>fK(v))});
+  kill('d-por');charts['d-por']=new Chart(document.getElementById('c-d-por').getContext('2d'),{type:'line',data:{labels:dowLabels,datasets:mkLineDS('p')},options:dLO(v=>fFull(v))});
   /* Table */
   document.getElementById('tbl-dia-head').innerHTML=`<th class="left">Dia</th>`+yrs.map(y=>`<th style="color:${YC[y]}">Rot</th><th style="color:${YC[y]}">Vol</th><th style="color:${YC[y]}">Dias</th>`).join('')+(has2026?'<th></th>':'');
   const bodyRows=DOW_ORDER.map(dow=>{
@@ -1000,11 +1020,27 @@ function saveCusto(v,ano,mes){
 function clearCustoOverride(ano,mes){
   try{localStorage.removeItem(beStorageKey(ano,mes));}catch(e){}
 }
+function parseCustoInput(str){
+  if(!str) return 0;
+  let s=String(str).replace(/[R$\s]/g,'').trim();
+  if(s.indexOf(',')>-1){ s=s.replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'); }
+  const v=parseFloat(s);
+  return isNaN(v)?0:v;
+}
+function formatCustoValue(v){
+  if(!v && v!==0) return '';
+  return 'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function formatCustoDisplay(){
+  const el=document.getElementById('be-custo');
+  const v=parseCustoInput(el.value);
+  el.value=v>0?formatCustoValue(v):'';
+}
 function onCustoChange(){
   const anos=[...activeYears].sort();const ano=anos[anos.length-1];
   const mes=document.getElementById('f-mes-fd').value;
-  const v=parseFloat(document.getElementById('be-custo').value);
-  if(!isNaN(v)&&v>0) saveCusto(v,ano,mes);
+  const v=parseCustoInput(document.getElementById('be-custo').value);
+  if(v>0) saveCusto(v,ano,mes);
   renderFatDiario();
 }
 function resetCustoToBudget(){
@@ -1039,16 +1075,16 @@ function renderFatDiario(){
   const saved=loadCusto(ano,mes);
   const budVal=(ano==='2026' && BUDGET_DATA[curGar]) ? (BUDGET_DATA[curGar][mes]||0) : 0;
   if(saved!=null){
-    custoInput.value=saved;
+    custoInput.value=formatCustoValue(saved);
     if(custoSrc) custoSrc.textContent='valor definido manualmente';
   } else if(budVal>0){
-    custoInput.value=budVal.toFixed(2);
+    custoInput.value=formatCustoValue(budVal);
     if(custoSrc) custoSrc.textContent='🎯 auto via Budget 2026';
   } else {
     custoInput.value='';
     if(custoSrc) custoSrc.textContent='';
   }
-  const custo=parseFloat(custoInput.value)||0;
+  const custo=parseCustoInput(custoInput.value)||0;
 
   if(!ano||!mes){
     document.getElementById('be-dia').textContent='—';
@@ -1106,7 +1142,7 @@ function renderFatDiario(){
       borderWidth:2, pointRadius:0, tension:.25});
   });
   if(fdChartDiaria) fdChartDiaria.destroy();
-  fdChartDiaria = new Chart(ctx1, {type:'line', data:{labels, datasets}, options: fdChartOpts()});
+  fdChartDiaria = new Chart(ctx1, {type:'line', data:{labels, datasets}, options: fdChartOptsFull()});
   document.getElementById('leg-fd-diaria').innerHTML = datasets.map(d=>
     `<span class="lg-item"><span class="lg-dot" style="background:${d.borderColor}"></span>${d.label}</span>`).join('');
 
@@ -1119,7 +1155,7 @@ function renderFatDiario(){
       borderDash:[6,4], borderWidth:1.5, pointRadius:0, fill:false});
   }
   if(fdChartAcum) fdChartAcum.destroy();
-  fdChartAcum = new Chart(ctx2, {type:'line', data:{labels, datasets:dsAcum}, options: fdChartOpts()});
+  fdChartAcum = new Chart(ctx2, {type:'line', data:{labels, datasets:dsAcum}, options: fdChartOptsFull()});
   document.getElementById('leg-fd-acum').innerHTML = dsAcum.map(d=>
     `<span class="lg-item"><span class="lg-dot" style="background:${d.borderColor}"></span>${d.label}</span>`).join('');
 
@@ -1138,6 +1174,20 @@ function fdChartOpts(){
     }
   };
 }
+/* Formatação completa em R$ com precisão de centena (sem abreviar em k/M) */
+function fFull(v){ return 'R$ '+Math.round(v).toLocaleString('pt-BR'); }
+function fdChartOptsFull(){
+  return {
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:(ctx)=>ctx.dataset.label+': '+fFull(ctx.parsed.y)}}},
+    scales:{
+      x:{ticks:{color:'#c8c8c8',font:{size:9}},grid:{color:'rgba(255,255,255,.05)'}},
+      y:{ticks:{color:'#c8c8c8',font:{size:9},callback:(v)=>fFull(v)},grid:{color:'rgba(255,255,255,.05)'}}
+    }
+  };
+}
 
 function renderHeatmap(ano, mes, rArr, nDias){
   const dowLabelsEl=document.getElementById('heatmap-dow-labels');
@@ -1145,13 +1195,29 @@ function renderHeatmap(ano, mes, rArr, nDias){
   const monIdx = MO.indexOf(mes);
   const firstDow = new Date(parseInt(ano), monIdx, 1).getDay();
   const maxVal = Math.max(...rArr, 1);
+  let maxIdx=-1, minIdx=-1, maxV=-Infinity, minV=Infinity;
+  // considera apenas dias com movimento real (>=1) — evita ruído de arredondamento
+  // e respeita a realidade de garagens que não operam sábado/domingo
+  rArr.slice(0,nDias).forEach((v,i)=>{
+    if(v>=1){
+      if(v>maxV){maxV=v;maxIdx=i;}
+      if(v<minV){minV=v;minIdx=i;}
+    }
+  });
   const cells=[];
   for(let i=0;i<firstDow;i++) cells.push('<div class="heatmap-cell empty-day"></div>');
   for(let d=1; d<=nDias; d++){
     const val = rArr[d-1]||0;
     const intensity = val/maxVal;
-    const color = heatColor(intensity);
-    const txtColor = intensity>0.55 ? '#0a0a0a' : '#e8e8e8';
+    let color, txtColor;
+    if(d-1===maxIdx && maxIdx>=0){
+      color='#4a90e2'; txtColor='#ffffff';
+    } else if(d-1===minIdx && minIdx>=0 && minIdx!==maxIdx){
+      color='#ff9b9b'; txtColor='#3a0a0a';
+    } else {
+      color = heatColor(intensity);
+      txtColor = intensity>0.55 ? '#0a0a0a' : '#e8e8e8';
+    }
     cells.push(`<div class="heatmap-cell" style="background:${color};color:${txtColor}">
       <span class="hday">${d}</span><span class="hval">${val>0?fKshort(val):''}</span></div>`);
   }
